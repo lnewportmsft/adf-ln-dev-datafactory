@@ -1,0 +1,22 @@
+{
+	"name": "adflndevstorage",
+	"type": "Microsoft.DataFactory/factories/linkedservices",
+	"properties": {
+		"annotations": [],
+		"type": "AzureBlobStorage",
+		"typeProperties": {
+			"connectionString": {
+				"type": "AzureKeyVaultSecret",
+				"store": {
+					"referenceName": "WWI_KeyVault",
+					"type": "LinkedServiceReference"
+				},
+				"secretName": "adflndevstorageconnectionstring"
+			}
+		},
+		"connectVia": {
+			"referenceName": "EASTUSIR",
+			"type": "IntegrationRuntimeReference"
+		}
+	}
+}

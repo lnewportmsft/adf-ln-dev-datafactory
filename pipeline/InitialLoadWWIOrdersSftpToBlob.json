@@ -1,0 +1,104 @@
+{
+	"name": "InitialLoadWWIOrdersSftpToBlob",
+	"properties": {
+		"activities": [
+			{
+				"name": "GetWWIOrdersFileListSFTP",
+				"type": "GetMetadata",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"dataset": {
+						"referenceName": "WWISftpParquet",
+						"type": "DatasetReference",
+						"parameters": {
+							"folder": "WorldWideImporters/orders",
+							"filename": "*",
+							"filetype": "parquet"
+						}
+					},
+					"fieldList": [
+						"childItems"
+					],
+					"storeSettings": {
+						"type": "SftpReadSettings",
+						"recursive": true
+					}
+				}
+			},
+			{
+				"name": "FilterWWISFTPOrdersFileNames",
+				"type": "Filter",
+				"dependsOn": [
+					{
+						"activity": "GetWWIOrdersFileListSFTP",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('GetWWIOrdersFileListSFTP').output.childitems",
+						"type": "Expression"
+					},
+					"condition": {
+						"value": "@not(or(contains(item().name,'testing'),contains(item().name,'old')))",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "LoopWWISftpOrdersFiles",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "FilterWWISFTPOrdersFileNames",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('FilterWWISFTPOrdersFileNames').output.Value",
+						"type": "Expression"
+					},
+					"isSequential": false,
+					"activities": [
+						{
+							"name": "WWIOrdersSftpToBlob",
+							"type": "ExecutePipeline",
+							"dependsOn": [],
+							"userProperties": [],
+							"typeProperties": {
+								"pipeline": {
+									"referenceName": "WWIOrdersSftpToBlob",
+									"type": "PipelineReference"
+								},
+								"waitOnCompletion": true,
+								"parameters": {
+									"date": {
+										"value": "@substring(item().name,add(indexof(item().name,'_'),1),10)",
+										"type": "Expression"
+									}
+								}
+							}
+						}
+					]
+				}
+			}
+		],
+		"annotations": []
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}
