@@ -1,0 +1,109 @@
+{
+	"name": "InitialLoadDATtoSQL",
+	"properties": {
+		"activities": [
+			{
+				"name": "GetFileListFromBlob",
+				"type": "GetMetadata",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"dataset": {
+						"referenceName": "FXFDelimitedTextBlob",
+						"type": "DatasetReference",
+						"parameters": {
+							"folder": "test",
+							"filename": "*",
+							"filetype": "DAT"
+						}
+					},
+					"fieldList": [
+						"childItems"
+					],
+					"storeSettings": {
+						"type": "AzureBlobStorageReadSettings"
+					},
+					"formatSettings": {
+						"type": "DelimitedTextReadSettings"
+					}
+				}
+			},
+			{
+				"name": "FilterFileNames",
+				"type": "Filter",
+				"dependsOn": [
+					{
+						"activity": "GetFileListFromBlob",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('GetFileListFromBlob').output.childitems",
+						"type": "Expression"
+					},
+					"condition": {
+						"value": "@not(or(contains(item().name,'testing'),contains(item().name,'old')))",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "LoopFXFDATFiles",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "FilterFileNames",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('FilterFileNames').output.Value",
+						"type": "Expression"
+					},
+					"isSequential": false,
+					"activities": [
+						{
+							"name": "WWIOrdersSftpToBlob",
+							"type": "ExecutePipeline",
+							"dependsOn": [],
+							"userProperties": [],
+							"typeProperties": {
+								"pipeline": {
+									"referenceName": "WWIOrdersSftpToBlob",
+									"type": "PipelineReference"
+								},
+								"waitOnCompletion": true,
+								"parameters": {
+									"date": {
+										"value": "@substring(item().name,add(indexof(item().name,'_'),1),10)",
+										"type": "Expression"
+									}
+								}
+							}
+						}
+					]
+				}
+			}
+		],
+		"folder": {
+			"name": "FXF"
+		},
+		"annotations": []
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}
