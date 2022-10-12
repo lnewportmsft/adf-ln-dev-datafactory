@@ -13,10 +13,6 @@
 				},
 				"secretName": "adflndevstorageconnectionstring"
 			}
-		},
-		"connectVia": {
-			"referenceName": "EASTUSIR",
-			"type": "IntegrationRuntimeReference"
 		}
 	}
 }

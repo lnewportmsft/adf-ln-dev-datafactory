@@ -13,10 +13,6 @@
 				},
 				"secretName": "azuresqldatabaselogin"
 			}
-		},
-		"connectVia": {
-			"referenceName": "EASTUSIR",
-			"type": "IntegrationRuntimeReference"
 		}
 	}
 }
