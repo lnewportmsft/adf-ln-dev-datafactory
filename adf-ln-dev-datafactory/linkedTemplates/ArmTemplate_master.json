@@ -1,0 +1,153 @@
+{
+	"$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"factoryName": {
+			"type": "string",
+			"metadata": "Data Factory name",
+			"defaultValue": "adf-ln-dev-datafactory"
+		},
+		"AzureDataLakeStorage1_accountKey": {
+			"type": "secureString",
+			"metadata": "Secure string for 'accountKey' of 'AzureDataLakeStorage1'"
+		},
+		"WWISftp1_connectionString": {
+			"type": "secureString",
+			"metadata": "Secure string for 'connectionString' of 'WWISftp1'"
+		},
+		"lgnstorage_connectionString": {
+			"type": "secureString",
+			"metadata": "Secure string for 'connectionString' of 'lgnstorage'"
+		},
+		"linkedService1_connectionString": {
+			"type": "secureString",
+			"metadata": "Secure string for 'connectionString' of 'linkedService1'"
+		},
+		"lgnsql2017_connectionString": {
+			"type": "secureString",
+			"metadata": "Secure string for 'connectionString' of 'lgnsql2017'"
+		},
+		"AzureDataLakeStorage1_properties_typeProperties_url": {
+			"type": "string",
+			"defaultValue": "https://lgnsynapselake.dfs.core.windows.net/"
+		},
+		"AzureSqlDatabase1_properties_typeProperties_connectionString_secretName": {
+			"type": "string",
+			"defaultValue": "azuresqldatabaselogin"
+		},
+		"RestService1_properties_typeProperties_url": {
+			"type": "string",
+			"defaultValue": "https://www.microsoft.com"
+		},
+		"SmartFoodsApiLinkedService_properties_typeProperties_url": {
+			"type": "string",
+			"defaultValue": "https://smartfoods.azurewebsites.net/api/"
+		},
+		"WWISftp_properties_typeProperties_host": {
+			"type": "string",
+			"defaultValue": "adflabsftp.westus2.cloudapp.azure.com"
+		},
+		"WWISftp_properties_typeProperties_userName": {
+			"type": "string",
+			"defaultValue": "sftpuser"
+		},
+		"WWI_KeyVault_properties_typeProperties_baseUrl": {
+			"type": "string",
+			"defaultValue": "https://adf-ln-dev-kv.vault.azure.net/"
+		},
+		"adflndevstorage_properties_typeProperties_connectionString_secretName": {
+			"type": "string",
+			"defaultValue": "adflndevstorageconnectionstring"
+		},
+		"containerUri": {
+			"type": "string",
+			"metadata": "URI to storage account containing linked ARM templates"
+		},
+		"containerSasToken": {
+			"type": "string",
+			"metadata": "Sas token to storage account containing linked ARM templates"
+		}
+	},
+	"variables": {
+		"factoryId": "[concat('Microsoft.DataFactory/factories/', parameters('factoryName'))]"
+	},
+	"resources": [
+		{
+			"name": "adf-ln-dev-datafactory_ArmTemplate_0",
+			"type": "Microsoft.Resources/deployments",
+			"apiVersion": "2018-02-01",
+			"properties": {
+				"mode": "incremental",
+				"templateLink": {
+					"uri": "[concat(parameters('containerUri'), '/ArmTemplate_0.json', parameters('containerSasToken'))]",
+					"contentVersion": "1.0.0.0"
+				},
+				"parameters": {
+					"factoryName": {
+						"value": "[parameters('factoryName')]"
+					},
+					"AzureDataLakeStorage1_accountKey": {
+						"value": "[parameters('AzureDataLakeStorage1_accountKey')]"
+					},
+					"WWISftp1_connectionString": {
+						"value": "[parameters('WWISftp1_connectionString')]"
+					},
+					"lgnstorage_connectionString": {
+						"value": "[parameters('lgnstorage_connectionString')]"
+					},
+					"linkedService1_connectionString": {
+						"value": "[parameters('linkedService1_connectionString')]"
+					},
+					"lgnsql2017_connectionString": {
+						"value": "[parameters('lgnsql2017_connectionString')]"
+					},
+					"AzureDataLakeStorage1_properties_typeProperties_url": {
+						"value": "[parameters('AzureDataLakeStorage1_properties_typeProperties_url')]"
+					},
+					"RestService1_properties_typeProperties_url": {
+						"value": "[parameters('RestService1_properties_typeProperties_url')]"
+					},
+					"SmartFoodsApiLinkedService_properties_typeProperties_url": {
+						"value": "[parameters('SmartFoodsApiLinkedService_properties_typeProperties_url')]"
+					},
+					"WWI_KeyVault_properties_typeProperties_baseUrl": {
+						"value": "[parameters('WWI_KeyVault_properties_typeProperties_baseUrl')]"
+					},
+					"AzureSqlDatabase1_properties_typeProperties_connectionString_secretName": {
+						"value": "[parameters('AzureSqlDatabase1_properties_typeProperties_connectionString_secretName')]"
+					},
+					"WWISftp_properties_typeProperties_host": {
+						"value": "[parameters('WWISftp_properties_typeProperties_host')]"
+					},
+					"WWISftp_properties_typeProperties_userName": {
+						"value": "[parameters('WWISftp_properties_typeProperties_userName')]"
+					},
+					"adflndevstorage_properties_typeProperties_connectionString_secretName": {
+						"value": "[parameters('adflndevstorage_properties_typeProperties_connectionString_secretName')]"
+					}
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "adf-ln-dev-datafactory_ArmTemplate_1",
+			"type": "Microsoft.Resources/deployments",
+			"apiVersion": "2018-02-01",
+			"properties": {
+				"mode": "incremental",
+				"templateLink": {
+					"uri": "[concat(parameters('containerUri'), '/ArmTemplate_1.json', parameters('containerSasToken'))]",
+					"contentVersion": "1.0.0.0"
+				},
+				"parameters": {
+					"factoryName": {
+						"value": "[parameters('factoryName')]"
+					}
+				}
+			},
+			"dependsOn": [
+				"[resourceId('Microsoft.Resources/deployments', 'adf-ln-dev-datafactory_ArmTemplate_0')]"
+			]
+		}
+	]
+}

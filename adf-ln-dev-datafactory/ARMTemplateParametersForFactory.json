@@ -1,0 +1,48 @@
+{
+	"$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"factoryName": {
+			"value": "adf-ln-dev-datafactory"
+		},
+		"AzureDataLakeStorage1_accountKey": {
+			"value": ""
+		},
+		"WWISftp1_connectionString": {
+			"value": ""
+		},
+		"lgnstorage_connectionString": {
+			"value": ""
+		},
+		"linkedService1_connectionString": {
+			"value": ""
+		},
+		"lgnsql2017_connectionString": {
+			"value": ""
+		},
+		"AzureDataLakeStorage1_properties_typeProperties_url": {
+			"value": "https://lgnsynapselake.dfs.core.windows.net/"
+		},
+		"AzureSqlDatabase1_properties_typeProperties_connectionString_secretName": {
+			"value": "azuresqldatabaselogin"
+		},
+		"RestService1_properties_typeProperties_url": {
+			"value": "https://www.microsoft.com"
+		},
+		"SmartFoodsApiLinkedService_properties_typeProperties_url": {
+			"value": "https://smartfoods.azurewebsites.net/api/"
+		},
+		"WWISftp_properties_typeProperties_host": {
+			"value": "adflabsftp.westus2.cloudapp.azure.com"
+		},
+		"WWISftp_properties_typeProperties_userName": {
+			"value": "sftpuser"
+		},
+		"WWI_KeyVault_properties_typeProperties_baseUrl": {
+			"value": "https://adf-ln-dev-kv.vault.azure.net/"
+		},
+		"adflndevstorage_properties_typeProperties_connectionString_secretName": {
+			"value": "adflndevstorageconnectionstring"
+		}
+	}
+}

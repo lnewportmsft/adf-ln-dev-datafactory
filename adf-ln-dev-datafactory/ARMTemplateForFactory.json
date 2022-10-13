@@ -1,0 +1,2330 @@
+{
+	"$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"factoryName": {
+			"type": "string",
+			"metadata": "Data Factory name",
+			"defaultValue": "adf-ln-dev-datafactory"
+		},
+		"AzureDataLakeStorage1_accountKey": {
+			"type": "secureString",
+			"metadata": "Secure string for 'accountKey' of 'AzureDataLakeStorage1'"
+		},
+		"WWISftp1_connectionString": {
+			"type": "secureString",
+			"metadata": "Secure string for 'connectionString' of 'WWISftp1'"
+		},
+		"lgnstorage_connectionString": {
+			"type": "secureString",
+			"metadata": "Secure string for 'connectionString' of 'lgnstorage'"
+		},
+		"linkedService1_connectionString": {
+			"type": "secureString",
+			"metadata": "Secure string for 'connectionString' of 'linkedService1'"
+		},
+		"lgnsql2017_connectionString": {
+			"type": "secureString",
+			"metadata": "Secure string for 'connectionString' of 'lgnsql2017'"
+		},
+		"AzureDataLakeStorage1_properties_typeProperties_url": {
+			"type": "string",
+			"defaultValue": "https://lgnsynapselake.dfs.core.windows.net/"
+		},
+		"AzureSqlDatabase1_properties_typeProperties_connectionString_secretName": {
+			"type": "string",
+			"defaultValue": "azuresqldatabaselogin"
+		},
+		"RestService1_properties_typeProperties_url": {
+			"type": "string",
+			"defaultValue": "https://www.microsoft.com"
+		},
+		"SmartFoodsApiLinkedService_properties_typeProperties_url": {
+			"type": "string",
+			"defaultValue": "https://smartfoods.azurewebsites.net/api/"
+		},
+		"WWISftp_properties_typeProperties_host": {
+			"type": "string",
+			"defaultValue": "adflabsftp.westus2.cloudapp.azure.com"
+		},
+		"WWISftp_properties_typeProperties_userName": {
+			"type": "string",
+			"defaultValue": "sftpuser"
+		},
+		"WWI_KeyVault_properties_typeProperties_baseUrl": {
+			"type": "string",
+			"defaultValue": "https://adf-ln-dev-kv.vault.azure.net/"
+		},
+		"adflndevstorage_properties_typeProperties_connectionString_secretName": {
+			"type": "string",
+			"defaultValue": "adflndevstorageconnectionstring"
+		}
+	},
+	"variables": {
+		"factoryId": "[concat('Microsoft.DataFactory/factories/', parameters('factoryName'))]"
+	},
+	"resources": [
+		{
+			"name": "[concat(parameters('factoryName'), '/InitialLoadDATtoSQL')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "GetFileListFromBlob",
+						"type": "GetMetadata",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "7.00:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"dataset": {
+								"referenceName": "FXFDelimitedTextBlob",
+								"type": "DatasetReference",
+								"parameters": {
+									"folder": "test",
+									"filename": "*",
+									"filetype": "DAT"
+								}
+							},
+							"fieldList": [
+								"childItems"
+							],
+							"storeSettings": {
+								"type": "AzureBlobStorageReadSettings",
+								"recursive": true
+							},
+							"formatSettings": {
+								"type": "DelimitedTextReadSettings"
+							}
+						}
+					},
+					{
+						"name": "FilterFileNames",
+						"type": "Filter",
+						"dependsOn": [
+							{
+								"activity": "GetFileListFromBlob",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"items": {
+								"value": "@activity('GetFileListFromBlob').output.childitems",
+								"type": "Expression"
+							},
+							"condition": {
+								"value": "@not(or(contains(item().name,'testing'),contains(item().name,'old')))",
+								"type": "Expression"
+							}
+						}
+					},
+					{
+						"name": "LoopFXFDATFiles",
+						"type": "ForEach",
+						"dependsOn": [
+							{
+								"activity": "FilterFileNames",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"items": {
+								"value": "@activity('FilterFileNames').output.Value",
+								"type": "Expression"
+							},
+							"isSequential": false,
+							"activities": [
+								{
+									"name": "WWIOrdersSftpToBlob",
+									"type": "ExecutePipeline",
+									"dependsOn": [],
+									"userProperties": [],
+									"typeProperties": {
+										"pipeline": {
+											"referenceName": "WWIOrdersSftpToBlob",
+											"type": "PipelineReference"
+										},
+										"waitOnCompletion": true,
+										"parameters": {
+											"date": {
+												"value": "@substring(item().name,add(indexof(item().name,'_'),1),10)",
+												"type": "Expression"
+											}
+										}
+									}
+								}
+							]
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {},
+					"cancelAfter": {}
+				},
+				"folder": {
+					"name": "FXF"
+				},
+				"annotations": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/FXFDelimitedTextBlob')]",
+				"[concat(variables('factoryId'), '/pipelines/WWIOrdersSftpToBlob')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/InitialLoadSmartFoodAllfeedsApiToBlob')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "LoopSmartFoodsDates",
+						"type": "ForEach",
+						"dependsOn": [
+							{
+								"activity": "LookupDates",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"items": {
+								"value": "@activity('LookupDates').output.value",
+								"type": "Expression"
+							},
+							"isSequential": true,
+							"activities": [
+								{
+									"name": "RunSmartFoodCustomerApiToBlob",
+									"type": "ExecutePipeline",
+									"dependsOn": [],
+									"userProperties": [],
+									"typeProperties": {
+										"pipeline": {
+											"referenceName": "SmartFoodCustomerApiToBlob",
+											"type": "PipelineReference"
+										},
+										"waitOnCompletion": true,
+										"parameters": {
+											"date": {
+												"value": "@item().date",
+												"type": "Expression"
+											}
+										}
+									}
+								},
+								{
+									"name": "RunSmartFoodTransactionApiToBlob",
+									"type": "ExecutePipeline",
+									"dependsOn": [],
+									"userProperties": [],
+									"typeProperties": {
+										"pipeline": {
+											"referenceName": "SmartFoodsTransactionsToBlob",
+											"type": "PipelineReference"
+										},
+										"waitOnCompletion": true,
+										"parameters": {
+											"date": {
+												"value": "@item().date",
+												"type": "Expression"
+											}
+										}
+									}
+								}
+							]
+						}
+					},
+					{
+						"name": "LookupDates",
+						"type": "Lookup",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "7.00:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "DelimitedTextSource",
+								"storeSettings": {
+									"type": "AzureBlobStorageReadSettings",
+									"recursive": true
+								},
+								"formatSettings": {
+									"type": "DelimitedTextReadSettings"
+								}
+							},
+							"dataset": {
+								"referenceName": "SmartFoodsDelimitedTextBlob",
+								"type": "DatasetReference",
+								"parameters": {
+									"folder": "ref_data",
+									"filename": "dates",
+									"filetype": "csv"
+								}
+							},
+							"firstRowOnly": false
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {},
+					"cancelAfter": {}
+				},
+				"variables": {
+					"dates": {
+						"type": "Array",
+						"defaultValue": [
+							"2020-01-01",
+							"2020-01-02",
+							"2020-01-03",
+							"2020-01-04"
+						]
+					}
+				},
+				"annotations": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/SmartFoodsDelimitedTextBlob')]",
+				"[concat(variables('factoryId'), '/pipelines/SmartFoodCustomerApiToBlob')]",
+				"[concat(variables('factoryId'), '/pipelines/SmartFoodsTransactionsToBlob')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/InitialLoadSmartFoodCustomerApiToBlob_original')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "LoopSmartFoodsDates",
+						"type": "ForEach",
+						"dependsOn": [
+							{
+								"activity": "LookupDates",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"items": {
+								"value": "@activity('LookupDates').output.value",
+								"type": "Expression"
+							},
+							"isSequential": true,
+							"activities": [
+								{
+									"name": "RunSmartFoodCustomerApiToBlob",
+									"type": "ExecutePipeline",
+									"dependsOn": [],
+									"userProperties": [],
+									"typeProperties": {
+										"pipeline": {
+											"referenceName": "SmartFoodCustomerApiToBlob",
+											"type": "PipelineReference"
+										},
+										"waitOnCompletion": true,
+										"parameters": {
+											"date": {
+												"value": "@item().date",
+												"type": "Expression"
+											}
+										}
+									}
+								}
+							]
+						}
+					},
+					{
+						"name": "LookupDates",
+						"type": "Lookup",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "7.00:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "DelimitedTextSource",
+								"storeSettings": {
+									"type": "AzureBlobStorageReadSettings",
+									"recursive": true
+								},
+								"formatSettings": {
+									"type": "DelimitedTextReadSettings"
+								}
+							},
+							"dataset": {
+								"referenceName": "SmartFoodsDelimitedTextBlob",
+								"type": "DatasetReference",
+								"parameters": {
+									"folder": "ref_data",
+									"filename": "dates",
+									"filetype": "csv"
+								}
+							},
+							"firstRowOnly": false
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {},
+					"cancelAfter": {}
+				},
+				"variables": {
+					"dates": {
+						"type": "Array",
+						"defaultValue": [
+							"2020-01-01",
+							"2020-01-02",
+							"2020-01-03",
+							"2020-01-04"
+						]
+					}
+				},
+				"annotations": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/SmartFoodsDelimitedTextBlob')]",
+				"[concat(variables('factoryId'), '/pipelines/SmartFoodCustomerApiToBlob')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/InitialLoadWWICustomerSftpToBlob')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "GetWWICustomerFileListSFTP",
+						"type": "GetMetadata",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "7.00:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"dataset": {
+								"referenceName": "WWISftpParquet",
+								"type": "DatasetReference",
+								"parameters": {
+									"folder": "WorldWideImporters/customers",
+									"filename": "*",
+									"filetype": "parquet"
+								}
+							},
+							"fieldList": [
+								"childItems"
+							],
+							"storeSettings": {
+								"type": "SftpReadSettings",
+								"recursive": true
+							}
+						}
+					},
+					{
+						"name": "FilterWWISFTPCustomerFileNames",
+						"type": "Filter",
+						"dependsOn": [
+							{
+								"activity": "GetWWICustomerFileListSFTP",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"items": {
+								"value": "@activity('GetWWICustomerFileListSFTP').output.childitems",
+								"type": "Expression"
+							},
+							"condition": {
+								"value": "@not(or(contains(item().name,'testing'),contains(item().name,'old')))",
+								"type": "Expression"
+							}
+						}
+					},
+					{
+						"name": "LoopWWISftpCustomerFiles",
+						"type": "ForEach",
+						"dependsOn": [
+							{
+								"activity": "FilterWWISFTPCustomerFileNames",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"items": {
+								"value": "@activity('FilterWWISFTPCustomerFileNames').output.Value",
+								"type": "Expression"
+							},
+							"isSequential": false,
+							"activities": [
+								{
+									"name": "WWICustomersSftpToBlob",
+									"type": "ExecutePipeline",
+									"dependsOn": [],
+									"userProperties": [],
+									"typeProperties": {
+										"pipeline": {
+											"referenceName": "WWICustomersSftpToBlob",
+											"type": "PipelineReference"
+										},
+										"waitOnCompletion": true,
+										"parameters": {
+											"date": {
+												"value": "@substring(item().name,add(indexof(item().name,'_'),1),10)",
+												"type": "Expression"
+											}
+										}
+									}
+								}
+							]
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {},
+					"cancelAfter": {}
+				},
+				"annotations": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/WWISftpParquet')]",
+				"[concat(variables('factoryId'), '/pipelines/WWICustomersSftpToBlob')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/InitialLoadWWIOrderlineSftpToBlob')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "GetWWIOrderlinesFileListSFTP",
+						"type": "GetMetadata",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "7.00:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"dataset": {
+								"referenceName": "WWISftpParquet",
+								"type": "DatasetReference",
+								"parameters": {
+									"folder": "WorldWideImporters/orderlines",
+									"filename": "*",
+									"filetype": "parquet"
+								}
+							},
+							"fieldList": [
+								"childItems"
+							],
+							"storeSettings": {
+								"type": "SftpReadSettings",
+								"recursive": true
+							}
+						}
+					},
+					{
+						"name": "FilterWWISFTPOrderlinesFileNames",
+						"type": "Filter",
+						"dependsOn": [
+							{
+								"activity": "GetWWIOrderlinesFileListSFTP",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"items": {
+								"value": "@activity('GetWWIOrderlinesFileListSFTP').output.childitems",
+								"type": "Expression"
+							},
+							"condition": {
+								"value": "@not(or(contains(item().name,'testing'),contains(item().name,'old')))",
+								"type": "Expression"
+							}
+						}
+					},
+					{
+						"name": "LoopWWISftpOrdersFiles",
+						"type": "ForEach",
+						"dependsOn": [
+							{
+								"activity": "FilterWWISFTPOrderlinesFileNames",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"items": {
+								"value": "@activity('FilterWWISFTPOrderlinesFileNames').output.Value",
+								"type": "Expression"
+							},
+							"isSequential": false,
+							"activities": [
+								{
+									"name": "WWIOrderlinesSftpToBlob",
+									"type": "ExecutePipeline",
+									"dependsOn": [],
+									"userProperties": [],
+									"typeProperties": {
+										"pipeline": {
+											"referenceName": "WWIOrderlinesSftpToBlob",
+											"type": "PipelineReference"
+										},
+										"waitOnCompletion": true,
+										"parameters": {
+											"date": {
+												"value": "@substring(item().name,add(indexof(item().name,'_'),1),10)",
+												"type": "Expression"
+											}
+										}
+									}
+								}
+							]
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {},
+					"cancelAfter": {}
+				},
+				"annotations": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/WWISftpParquet')]",
+				"[concat(variables('factoryId'), '/pipelines/WWIOrderlinesSftpToBlob')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/InitialLoadWWIOrdersSftpToBlob')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "GetWWIOrdersFileListSFTP",
+						"type": "GetMetadata",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "7.00:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"dataset": {
+								"referenceName": "WWISftpParquet",
+								"type": "DatasetReference",
+								"parameters": {
+									"folder": "WorldWideImporters/orders",
+									"filename": "*",
+									"filetype": "parquet"
+								}
+							},
+							"fieldList": [
+								"childItems"
+							],
+							"storeSettings": {
+								"type": "SftpReadSettings",
+								"recursive": true
+							}
+						}
+					},
+					{
+						"name": "FilterWWISFTPOrdersFileNames",
+						"type": "Filter",
+						"dependsOn": [
+							{
+								"activity": "GetWWIOrdersFileListSFTP",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"items": {
+								"value": "@activity('GetWWIOrdersFileListSFTP').output.childitems",
+								"type": "Expression"
+							},
+							"condition": {
+								"value": "@not(or(contains(item().name,'testing'),contains(item().name,'old')))",
+								"type": "Expression"
+							}
+						}
+					},
+					{
+						"name": "LoopWWISftpOrdersFiles",
+						"type": "ForEach",
+						"dependsOn": [
+							{
+								"activity": "FilterWWISFTPOrdersFileNames",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"items": {
+								"value": "@activity('FilterWWISFTPOrdersFileNames').output.Value",
+								"type": "Expression"
+							},
+							"isSequential": false,
+							"activities": [
+								{
+									"name": "WWIOrdersSftpToBlob",
+									"type": "ExecutePipeline",
+									"dependsOn": [],
+									"userProperties": [],
+									"typeProperties": {
+										"pipeline": {
+											"referenceName": "WWIOrdersSftpToBlob",
+											"type": "PipelineReference"
+										},
+										"waitOnCompletion": true,
+										"parameters": {
+											"date": {
+												"value": "@substring(item().name,add(indexof(item().name,'_'),1),10)",
+												"type": "Expression"
+											}
+										}
+									}
+								}
+							]
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {},
+					"cancelAfter": {}
+				},
+				"annotations": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/WWISftpParquet')]",
+				"[concat(variables('factoryId'), '/pipelines/WWIOrdersSftpToBlob')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/SmartFoodCustomerApiToBlob')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "AKVUsername",
+						"type": "WebActivity",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "7.00:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": true,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"url": "https://adf-ln-dev-kv.vault.azure.net/secrets/SmartFoodsRestAPIUsername/d0f8f71b72ce4bd086462d95c58acd5c?api-version=7.0",
+							"method": "GET",
+							"headers": {},
+							"authentication": {
+								"type": "MSI",
+								"resource": "https://vault.azure.net"
+							}
+						}
+					},
+					{
+						"name": "AKVPassword",
+						"type": "WebActivity",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "7.00:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": true,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"url": "https://adf-ln-dev-kv.vault.azure.net/secrets/SmartFoodsRestAPIPassword/ddb0f55cd8ef4030872823452b88f892?api-version=7.0",
+							"method": "GET",
+							"headers": {},
+							"authentication": {
+								"type": "MSI",
+								"resource": "https://vault.azure.net"
+							}
+						}
+					},
+					{
+						"name": "SmartFoodsLogin",
+						"type": "WebActivity",
+						"dependsOn": [
+							{
+								"activity": "AKVUsername",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							},
+							{
+								"activity": "AKVPassword",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "7.00:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": true,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"url": "https://smartfoods.azurewebsites.net/api/SmartFoodsOauth",
+							"method": "POST",
+							"headers": {},
+							"body": {
+								"value": "@json(concat('{\"username\":\"',activity('AKVUsername').output.value,'\",\"password\":\"',activity('AKVPassword').output.value,'\"'))",
+								"type": "Expression"
+							}
+						}
+					},
+					{
+						"name": "SetAccessToken",
+						"type": "SetVariable",
+						"dependsOn": [
+							{
+								"activity": "SmartFoodsLogin",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"variableName": "token",
+							"value": {
+								"value": "@activity('SmartFoodsLogin').output.token",
+								"type": "Expression"
+							}
+						}
+					},
+					{
+						"name": "SmartFoodsCustomersToBlob",
+						"type": "Copy",
+						"dependsOn": [
+							{
+								"activity": "SetAccessToken",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "7.00:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "JsonSource",
+								"storeSettings": {
+									"type": "HttpReadSettings",
+									"requestMethod": "POST",
+									"requestBody": {
+										"value": "@{json(concat('{\"trans_date\": \"',pipeline().parameters.date,'\",\"dataDomain\" : \"customers\"}'))}",
+										"type": "Expression"
+									},
+									"requestTimeout": ""
+								},
+								"formatSettings": {
+									"type": "JsonReadSettings"
+								}
+							},
+							"sink": {
+								"type": "DelimitedTextSink",
+								"storeSettings": {
+									"type": "AzureBlobStorageWriteSettings"
+								},
+								"formatSettings": {
+									"type": "DelimitedTextWriteSettings",
+									"quoteAllText": true,
+									"fileExtension": ".txt"
+								}
+							},
+							"enableStaging": false
+						},
+						"inputs": [
+							{
+								"referenceName": "SmartFoodsCustomerApiJson",
+								"type": "DatasetReference",
+								"parameters": {
+									"authCode": {
+										"value": "@variables('token')",
+										"type": "Expression"
+									}
+								}
+							}
+						],
+						"outputs": [
+							{
+								"referenceName": "SmartFoodsDelimitedTextBlob",
+								"type": "DatasetReference",
+								"parameters": {
+									"folder": "customers",
+									"filename": {
+										"value": "smartfoods_customers_@{replace(pipeline().parameters.date,'-','')}",
+										"type": "Expression"
+									},
+									"filetype": "csv"
+								}
+							}
+						]
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {},
+					"cancelAfter": {}
+				},
+				"parameters": {
+					"date": {
+						"type": "string"
+					}
+				},
+				"variables": {
+					"token": {
+						"type": "String"
+					}
+				},
+				"annotations": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/SmartFoodsCustomerApiJson')]",
+				"[concat(variables('factoryId'), '/datasets/SmartFoodsDelimitedTextBlob')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/SmartFoodsTransactionsToBlob')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "AKVUsername",
+						"type": "WebActivity",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "7.00:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": true,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"url": "https://adf-ln-dev-kv.vault.azure.net/secrets/SmartFoodsRestAPIUsername/d0f8f71b72ce4bd086462d95c58acd5c?api-version=7.0",
+							"method": "GET",
+							"headers": {},
+							"authentication": {
+								"type": "MSI",
+								"resource": "https://vault.azure.net"
+							}
+						}
+					},
+					{
+						"name": "AKVPassword",
+						"type": "WebActivity",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "7.00:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": true,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"url": "https://adf-ln-dev-kv.vault.azure.net/secrets/SmartFoodsRestAPIPassword/ddb0f55cd8ef4030872823452b88f892?api-version=7.0",
+							"method": "GET",
+							"headers": {},
+							"authentication": {
+								"type": "MSI",
+								"resource": "https://vault.azure.net"
+							}
+						}
+					},
+					{
+						"name": "SmartFoodsLogin",
+						"type": "WebActivity",
+						"dependsOn": [
+							{
+								"activity": "AKVUsername",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							},
+							{
+								"activity": "AKVPassword",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "7.00:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": true,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"url": "https://smartfoods.azurewebsites.net/api/SmartFoodsOauth",
+							"method": "POST",
+							"headers": {},
+							"body": {
+								"value": "@json(concat('{\"username\":\"',activity('AKVUsername').output.value,'\",\"password\":\"',activity('AKVPassword').output.value,'\"'))",
+								"type": "Expression"
+							}
+						}
+					},
+					{
+						"name": "SetAccessToken",
+						"type": "SetVariable",
+						"dependsOn": [
+							{
+								"activity": "SmartFoodsLogin",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"variableName": "token",
+							"value": {
+								"value": "@activity('SmartFoodsLogin').output.token",
+								"type": "Expression"
+							}
+						}
+					},
+					{
+						"name": "SmartFoodsTransactionsToBlob",
+						"type": "Copy",
+						"dependsOn": [
+							{
+								"activity": "SetAccessToken",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "7.00:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "DelimitedTextSource",
+								"storeSettings": {
+									"type": "HttpReadSettings",
+									"requestMethod": "POST",
+									"requestBody": {
+										"value": "@{json(concat('{\"trans_date\": \"',pipeline().parameters.date,'\",\"dataDomain\" : \"transactions\"}'))}",
+										"type": "Expression"
+									},
+									"requestTimeout": ""
+								},
+								"formatSettings": {
+									"type": "DelimitedTextReadSettings"
+								}
+							},
+							"sink": {
+								"type": "DelimitedTextSink",
+								"storeSettings": {
+									"type": "AzureBlobStorageWriteSettings"
+								},
+								"formatSettings": {
+									"type": "DelimitedTextWriteSettings",
+									"quoteAllText": true,
+									"fileExtension": ".txt"
+								}
+							},
+							"enableStaging": false
+						},
+						"inputs": [
+							{
+								"referenceName": "SmartFoodsTransactionApiCsv",
+								"type": "DatasetReference",
+								"parameters": {
+									"authCode": {
+										"value": "@variables('token')",
+										"type": "Expression"
+									}
+								}
+							}
+						],
+						"outputs": [
+							{
+								"referenceName": "SmartFoodsDelimitedTextBlob",
+								"type": "DatasetReference",
+								"parameters": {
+									"folder": "transaction",
+									"filename": {
+										"value": "smartfoods_transactions_@{replace(pipeline().parameters.date,'-','')}",
+										"type": "Expression"
+									},
+									"filetype": "csv"
+								}
+							}
+						]
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {},
+					"cancelAfter": {}
+				},
+				"parameters": {
+					"date": {
+						"type": "string"
+					}
+				},
+				"variables": {
+					"token": {
+						"type": "String"
+					}
+				},
+				"annotations": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/SmartFoodsTransactionApiCsv')]",
+				"[concat(variables('factoryId'), '/datasets/SmartFoodsDelimitedTextBlob')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/WWICustomersSftpToBlob')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "CopyWWICustomerSFTPtoBlob",
+						"type": "Copy",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "7.00:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "ParquetSource",
+								"storeSettings": {
+									"type": "SftpReadSettings",
+									"recursive": true
+								}
+							},
+							"sink": {
+								"type": "ParquetSink",
+								"storeSettings": {
+									"type": "AzureBlobStorageWriteSettings"
+								}
+							},
+							"enableStaging": false
+						},
+						"inputs": [
+							{
+								"referenceName": "WWISftpParquet",
+								"type": "DatasetReference",
+								"parameters": {
+									"folder": "WorldWideImporters/customers",
+									"filename": {
+										"value": "customers_@{pipeline().parameters.date}",
+										"type": "Expression"
+									},
+									"filetype": "parquet"
+								}
+							}
+						],
+						"outputs": [
+							{
+								"referenceName": "WWIStagingBlobParquet",
+								"type": "DatasetReference",
+								"parameters": {
+									"folder": "customer",
+									"filename": {
+										"value": "customers_@{pipeline().parameters.date}",
+										"type": "Expression"
+									},
+									"filetype": "parquet"
+								}
+							}
+						]
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {},
+					"cancelAfter": {}
+				},
+				"parameters": {
+					"date": {
+						"type": "string"
+					}
+				},
+				"annotations": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/WWISftpParquet')]",
+				"[concat(variables('factoryId'), '/datasets/WWIStagingBlobParquet')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/WWIOrderlinesSftpToBlob')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "CopyWWIOrderlineSFTPtoBlob",
+						"type": "Copy",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "7.00:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "ParquetSource",
+								"storeSettings": {
+									"type": "SftpReadSettings",
+									"recursive": true
+								}
+							},
+							"sink": {
+								"type": "ParquetSink",
+								"storeSettings": {
+									"type": "AzureBlobStorageWriteSettings"
+								}
+							},
+							"enableStaging": false
+						},
+						"inputs": [
+							{
+								"referenceName": "WWISftpParquet",
+								"type": "DatasetReference",
+								"parameters": {
+									"folder": "WorldWideImporters/orderlines",
+									"filename": {
+										"value": "orderlines_@{pipeline().parameters.date}",
+										"type": "Expression"
+									},
+									"filetype": "parquet"
+								}
+							}
+						],
+						"outputs": [
+							{
+								"referenceName": "WWIStagingBlobParquet",
+								"type": "DatasetReference",
+								"parameters": {
+									"folder": "orderline",
+									"filename": {
+										"value": "orderlines_@{pipeline().parameters.date}",
+										"type": "Expression"
+									},
+									"filetype": "parquet"
+								}
+							}
+						]
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {},
+					"cancelAfter": {}
+				},
+				"parameters": {
+					"date": {
+						"type": "string"
+					}
+				},
+				"annotations": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/WWISftpParquet')]",
+				"[concat(variables('factoryId'), '/datasets/WWIStagingBlobParquet')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/WWIOrdersSftpToBlob')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "CopyWWIOrderSFTPtoBlob",
+						"type": "Copy",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "7.00:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "ParquetSource",
+								"storeSettings": {
+									"type": "SftpReadSettings",
+									"recursive": true
+								}
+							},
+							"sink": {
+								"type": "ParquetSink",
+								"storeSettings": {
+									"type": "AzureBlobStorageWriteSettings"
+								}
+							},
+							"enableStaging": false
+						},
+						"inputs": [
+							{
+								"referenceName": "WWISftpParquet",
+								"type": "DatasetReference",
+								"parameters": {
+									"folder": "WorldWideImporters/orders",
+									"filename": {
+										"value": "orders_@{pipeline().parameters.date}",
+										"type": "Expression"
+									},
+									"filetype": "parquet"
+								}
+							}
+						],
+						"outputs": [
+							{
+								"referenceName": "WWIStagingBlobParquet",
+								"type": "DatasetReference",
+								"parameters": {
+									"folder": "order",
+									"filename": {
+										"value": "orders_@{pipeline().parameters.date}",
+										"type": "Expression"
+									},
+									"filetype": "parquet"
+								}
+							}
+						]
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {},
+					"cancelAfter": {}
+				},
+				"parameters": {
+					"date": {
+						"type": "string"
+					}
+				},
+				"annotations": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/WWISftpParquet')]",
+				"[concat(variables('factoryId'), '/datasets/WWIStagingBlobParquet')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/AdlsGen2BlobJson')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"description": "Azure Data Lake Storage Gen2 container for JSON format.",
+				"linkedServiceName": {
+					"referenceName": "AzureDataLakeStorage1",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"FolderName": {
+						"type": "string"
+					},
+					"FileName": {
+						"type": "string"
+					}
+				},
+				"folder": {
+					"name": "JSON Format"
+				},
+				"annotations": [],
+				"type": "Json",
+				"typeProperties": {
+					"location": {
+						"type": "AzureBlobFSLocation",
+						"fileName": {
+							"value": "@dataset().FileName",
+							"type": "Expression"
+						},
+						"fileSystem": {
+							"value": "@dataset().FolderName",
+							"type": "Expression"
+						}
+					}
+				},
+				"schema": {}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/AzureDataLakeStorage1')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/AzureSqlTable1')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "AzureSqlDatabase1",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"schema": {
+						"type": "string"
+					},
+					"table_name": {
+						"type": "string"
+					}
+				},
+				"annotations": [],
+				"type": "AzureSqlTable",
+				"schema": [],
+				"typeProperties": {
+					"schema": {
+						"value": "@dataset().schema",
+						"type": "Expression"
+					},
+					"table": {
+						"value": "@dataset().table_name",
+						"type": "Expression"
+					}
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/AzureSqlDatabase1')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/FXFDelimitedTextBlob')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "lgnstorage",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"folder": {
+						"type": "string"
+					},
+					"filename": {
+						"type": "string"
+					},
+					"filetype": {
+						"type": "string"
+					}
+				},
+				"annotations": [],
+				"type": "DelimitedText",
+				"typeProperties": {
+					"location": {
+						"type": "AzureBlobStorageLocation",
+						"fileName": {
+							"value": "@{dataset().filename}.@{dataset().filetype}",
+							"type": "Expression"
+						},
+						"folderPath": {
+							"value": "@dataset().folder",
+							"type": "Expression"
+						}
+					},
+					"columnDelimiter": ",",
+					"escapeChar": "\\",
+					"quoteChar": "\""
+				},
+				"schema": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/lgnstorage')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/ProfiseeRESTAPI_Records_Upsert')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"description": "Profisee members update REST API call.",
+				"linkedServiceName": {
+					"referenceName": "RestService1",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"entityId": {
+						"type": "string"
+					}
+				},
+				"folder": {
+					"name": "Profisee REST API"
+				},
+				"annotations": [],
+				"type": "RestResource",
+				"typeProperties": {
+					"relativeUrl": {
+						"value": "@concat(\n'records/',\ndataset().entityId, \n'/?isUpsert=true'\n)\n",
+						"type": "Expression"
+					}
+				},
+				"schema": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/RestService1')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/SmartFoodsCustomerApiJson')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "SmartFoodsApiLinkedService",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"authCode": {
+						"type": "string"
+					}
+				},
+				"annotations": [],
+				"type": "Json",
+				"typeProperties": {
+					"location": {
+						"type": "HttpServerLocation",
+						"relativeUrl": {
+							"value": "smartfoods?code=@{dataset().authCode}",
+							"type": "Expression"
+						}
+					}
+				},
+				"schema": {}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/SmartFoodsApiLinkedService')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/SmartFoodsDelimitedTextBlob')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "adflndevstorage",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"folder": {
+						"type": "string"
+					},
+					"filename": {
+						"type": "string"
+					},
+					"filetype": {
+						"type": "string"
+					}
+				},
+				"annotations": [],
+				"type": "DelimitedText",
+				"typeProperties": {
+					"location": {
+						"type": "AzureBlobStorageLocation",
+						"fileName": {
+							"value": "@{dataset().filename}.@{dataset().filetype}",
+							"type": "Expression"
+						},
+						"folderPath": {
+							"value": "@dataset().folder",
+							"type": "Expression"
+						},
+						"container": "smartfoodsstaging"
+					},
+					"columnDelimiter": ",",
+					"escapeChar": "\\",
+					"firstRowAsHeader": true,
+					"quoteChar": "\""
+				},
+				"schema": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/adflndevstorage')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/SmartFoodsTransactionApiCsv')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "SmartFoodsApiLinkedService",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"authCode": {
+						"type": "string"
+					}
+				},
+				"annotations": [],
+				"type": "DelimitedText",
+				"typeProperties": {
+					"location": {
+						"type": "HttpServerLocation",
+						"relativeUrl": {
+							"value": "smartfoods?code=@{dataset().authCode}",
+							"type": "Expression"
+						}
+					},
+					"columnDelimiter": ",",
+					"escapeChar": "\\",
+					"quoteChar": "\""
+				},
+				"schema": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/SmartFoodsApiLinkedService')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/WWIDataWarehouseBlobParquet')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "adflndevstorage",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"folder": {
+						"type": "string"
+					},
+					"filename": {
+						"type": "string"
+					},
+					"filetype": {
+						"type": "string"
+					}
+				},
+				"annotations": [],
+				"type": "Parquet",
+				"typeProperties": {
+					"location": {
+						"type": "AzureBlobStorageLocation",
+						"fileName": {
+							"value": "@{dataset().filename}.@{dataset().filetype}",
+							"type": "Expression"
+						},
+						"folderPath": {
+							"value": "@dataset().folder",
+							"type": "Expression"
+						},
+						"container": "wwidatawarehouse"
+					},
+					"compressionCodec": "snappy"
+				},
+				"schema": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/adflndevstorage')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/WWISftpParquet')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "WWISftp",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"folder": {
+						"type": "string"
+					},
+					"filename": {
+						"type": "string"
+					},
+					"filetype": {
+						"type": "string"
+					}
+				},
+				"annotations": [],
+				"type": "Parquet",
+				"typeProperties": {
+					"location": {
+						"type": "SftpLocation",
+						"fileName": {
+							"value": "@{dataset().filename}.@{dataset().filetype}",
+							"type": "Expression"
+						},
+						"folderPath": {
+							"value": "@dataset().folder",
+							"type": "Expression"
+						}
+					},
+					"compressionCodec": "snappy"
+				},
+				"schema": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/WWISftp')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/WWIStagingBlobParquet')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "adflndevstorage",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"folder": {
+						"type": "string"
+					},
+					"filename": {
+						"type": "string"
+					},
+					"filetype": {
+						"type": "string"
+					}
+				},
+				"annotations": [],
+				"type": "Parquet",
+				"typeProperties": {
+					"location": {
+						"type": "AzureBlobStorageLocation",
+						"fileName": {
+							"value": "@{dataset().filename}.@{dataset().filetype}",
+							"type": "Expression"
+						},
+						"folderPath": {
+							"value": "@dataset().folder",
+							"type": "Expression"
+						},
+						"container": "wwistaging"
+					},
+					"compressionCodec": "snappy"
+				},
+				"schema": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/adflndevstorage')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/AzureDataLakeStorage1')]",
+			"type": "Microsoft.DataFactory/factories/linkedServices",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"annotations": [],
+				"type": "AzureBlobFS",
+				"typeProperties": {
+					"url": "[parameters('AzureDataLakeStorage1_properties_typeProperties_url')]",
+					"accountKey": {
+						"type": "SecureString",
+						"value": "[parameters('AzureDataLakeStorage1_accountKey')]"
+					}
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/AzureSqlDatabase1')]",
+			"type": "Microsoft.DataFactory/factories/linkedServices",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"annotations": [],
+				"type": "AzureSqlDatabase",
+				"typeProperties": {
+					"connectionString": {
+						"type": "AzureKeyVaultSecret",
+						"store": {
+							"referenceName": "WWI_KeyVault",
+							"type": "LinkedServiceReference"
+						},
+						"secretName": "[parameters('AzureSqlDatabase1_properties_typeProperties_connectionString_secretName')]"
+					}
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/WWI_KeyVault')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/RestService1')]",
+			"type": "Microsoft.DataFactory/factories/linkedServices",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"annotations": [],
+				"type": "RestService",
+				"typeProperties": {
+					"url": "[parameters('RestService1_properties_typeProperties_url')]",
+					"enableServerCertificateValidation": true,
+					"authenticationType": "Anonymous"
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/SmartFoodsApiLinkedService')]",
+			"type": "Microsoft.DataFactory/factories/linkedServices",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"annotations": [],
+				"type": "HttpServer",
+				"typeProperties": {
+					"url": "[parameters('SmartFoodsApiLinkedService_properties_typeProperties_url')]",
+					"enableServerCertificateValidation": true,
+					"authenticationType": "Anonymous"
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/WWISftp')]",
+			"type": "Microsoft.DataFactory/factories/linkedServices",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"annotations": [],
+				"type": "Sftp",
+				"typeProperties": {
+					"host": "[parameters('WWISftp_properties_typeProperties_host')]",
+					"port": 22,
+					"skipHostKeyValidation": true,
+					"authenticationType": "Basic",
+					"userName": "[parameters('WWISftp_properties_typeProperties_userName')]",
+					"password": {
+						"type": "AzureKeyVaultSecret",
+						"store": {
+							"referenceName": "WWI_KeyVault",
+							"type": "LinkedServiceReference"
+						},
+						"secretName": "WWISftpPassword"
+					}
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/WWI_KeyVault')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/WWISftp1')]",
+			"type": "Microsoft.DataFactory/factories/linkedServices",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"annotations": [],
+				"type": "AzureBlobStorage",
+				"typeProperties": {
+					"connectionString": "[parameters('WWISftp1_connectionString')]"
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/WWI_KeyVault')]",
+			"type": "Microsoft.DataFactory/factories/linkedServices",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"annotations": [],
+				"type": "AzureKeyVault",
+				"typeProperties": {
+					"baseUrl": "[parameters('WWI_KeyVault_properties_typeProperties_baseUrl')]"
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/adflndevstorage')]",
+			"type": "Microsoft.DataFactory/factories/linkedServices",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"annotations": [],
+				"type": "AzureBlobStorage",
+				"typeProperties": {
+					"connectionString": {
+						"type": "AzureKeyVaultSecret",
+						"store": {
+							"referenceName": "WWI_KeyVault",
+							"type": "LinkedServiceReference"
+						},
+						"secretName": "[parameters('adflndevstorage_properties_typeProperties_connectionString_secretName')]"
+					}
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/WWI_KeyVault')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/lgnstorage')]",
+			"type": "Microsoft.DataFactory/factories/linkedServices",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"annotations": [],
+				"type": "AzureBlobStorage",
+				"typeProperties": {
+					"connectionString": "[parameters('lgnstorage_connectionString')]"
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/linkedService1')]",
+			"type": "Microsoft.DataFactory/factories/linkedServices",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"annotations": [],
+				"type": "AzureSqlDatabase",
+				"typeProperties": {
+					"connectionString": "[parameters('linkedService1_connectionString')]"
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/EASTUSIR')]",
+			"type": "Microsoft.DataFactory/factories/integrationRuntimes",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"type": "Managed",
+				"typeProperties": {
+					"computeProperties": {
+						"location": "East US",
+						"dataFlowProperties": {
+							"computeType": "General",
+							"coreCount": 8,
+							"timeToLive": 10,
+							"cleanup": false
+						}
+					}
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/lgnsql2017')]",
+			"type": "Microsoft.DataFactory/factories/integrationRuntimes",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"type": "SelfHosted",
+				"typeProperties": {}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/Flatten')]",
+			"type": "Microsoft.DataFactory/factories/dataflows",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"type": "MappingDataFlow",
+				"typeProperties": {
+					"sources": [
+						{
+							"linkedService": {
+								"referenceName": "lgnstorage",
+								"type": "LinkedServiceReference"
+							},
+							"name": "source1"
+						}
+					],
+					"sinks": [
+						{
+							"linkedService": {
+								"referenceName": "AzureDataLakeStorage1",
+								"type": "LinkedServiceReference"
+							},
+							"name": "sink1"
+						}
+					],
+					"transformations": [
+						{
+							"name": "flatten1"
+						}
+					],
+					"scriptLines": [
+						"source(output(",
+						"          goods as (customers as string[], orders as (orderId as short, orderTotal as double, shipped as (orderItems as (itemName as string, itemQty as short)[]))[], trade as boolean),",
+						"          location as string,",
+						"          name as string,",
+						"          satellites as string[]",
+						"     ),",
+						"     useSchema: false,",
+						"     allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     ignoreNoFilesFound: false,",
+						"     format: 'json',",
+						"     container: 'raw',",
+						"     fileName: 'complexjson.json',",
+						"     documentForm: 'singleDocument') ~> source1",
+						"source1 foldDown(unroll(goods.orders.shipped.orderItems, goods.orders),",
+						"     mapColumn(",
+						"          name,",
+						"          orderId = goods.orders.orderId,",
+						"          itemName = goods.orders.shipped.orderItems.itemName,",
+						"          itemQty = goods.orders.shipped.orderItems.itemQty,",
+						"          location",
+						"     ),",
+						"     skipDuplicateMapInputs: false,",
+						"     skipDuplicateMapOutputs: false) ~> flatten1",
+						"flatten1 sink(allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     format: 'delta',",
+						"     fileSystem: 'lgnsynapsefs',",
+						"     mergeSchema: false,",
+						"     autoCompact: false,",
+						"     optimizedWrite: false,",
+						"     vacuum: 0,",
+						"     deletable:false,",
+						"     insertable:true,",
+						"     updateable:false,",
+						"     upsertable:false,",
+						"     umask: 0022,",
+						"     preCommands: [],",
+						"     postCommands: [],",
+						"     skipDuplicateMapInputs: true,",
+						"     skipDuplicateMapOutputs: true) ~> sink1"
+					]
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/lgnstorage')]",
+				"[concat(variables('factoryId'), '/linkedServices/AzureDataLakeStorage1')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/SmartFoodsCustomerELT')]",
+			"type": "Microsoft.DataFactory/factories/dataflows",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"type": "MappingDataFlow",
+				"typeProperties": {
+					"sources": [
+						{
+							"dataset": {
+								"referenceName": "SmartFoodsDelimitedTextBlob",
+								"type": "DatasetReference"
+							},
+							"name": "SmartFoodsCustomerStagingBlob"
+						},
+						{
+							"dataset": {
+								"referenceName": "AzureSqlTable1",
+								"type": "DatasetReference"
+							},
+							"name": "SmartFoodsCustomerSQLDW"
+						}
+					],
+					"sinks": [
+						{
+							"linkedService": {
+								"referenceName": "adflndevstorage",
+								"type": "LinkedServiceReference"
+							},
+							"name": "sink1"
+						}
+					],
+					"transformations": [
+						{
+							"name": "AddFirstNameLastName"
+						},
+						{
+							"name": "FixColumnNamesRemoveName"
+						},
+						{
+							"name": "MD5Hash"
+						},
+						{
+							"name": "CurrentRecordsOnly"
+						},
+						{
+							"name": "JoinStagingToDWDim"
+						},
+						{
+							"name": "SDC2Split"
+						},
+						{
+							"name": "SelectNewInsert"
+						},
+						{
+							"name": "SelectChangedInsert"
+						},
+						{
+							"name": "SelectChangedUpdate"
+						},
+						{
+							"name": "ALLInserts"
+						},
+						{
+							"name": "SurrogateKey"
+						},
+						{
+							"name": "MaxCustomerKey"
+						},
+						{
+							"name": "InsertRecsBatchColumns"
+						},
+						{
+							"name": "UnionInsertUpdates"
+						},
+						{
+							"name": "UpdateRecsBatchColumns"
+						}
+					],
+					"script": "parameters{\n\tMaxCustomerKey as integer (0),\n\tBatchDt as string (toString(currentDate()))\n}\nsource(output(\n\t\tloyalty_num as string,\n\t\tname as string,\n\t\temail as string,\n\t\tdob as date,\n\t\taddress as string,\n\t\tcity as string,\n\t\tstate as string,\n\t\tpostCode as string,\n\t\tmembersince as date\n\t),\n\tallowSchemaDrift: true,\n\tvalidateSchema: false,\n\tignoreNoFilesFound: false,\n\trowUrlColumn: 'sourceLineage') ~> SmartFoodsCustomerStagingBlob\nsource(output(\n\t\tCustomerKey as long,\n\t\tLoyaltyNum as string,\n\t\tFirstName as string,\n\t\tLastName as string,\n\t\tCity as string,\n\t\tState as string,\n\t\tEmail as string,\n\t\tAddress as string,\n\t\tPostCode as string,\n\t\tMemberSince as date,\n\t\tDob as date,\n\t\tRecInsertDt as date,\n\t\tRecStartDt as date,\n\t\tRecEndDt as date,\n\t\tRecCurrInd as boolean,\n\t\tsourceLineage as string,\n\t\tRecMd5Hash as string\n\t),\n\tallowSchemaDrift: true,\n\tvalidateSchema: false,\n\tisolationLevel: 'READ_UNCOMMITTED',\n\tformat: 'table') ~> SmartFoodsCustomerSQLDW\nSmartFoodsCustomerStagingBlob derive(FirstName = split(name,\" \")[1],\n\t\tLastName = split(name,\" \")[2]) ~> AddFirstNameLastName\nAddFirstNameLastName select(mapColumn(\n\t\tiLoyaltyNum = loyalty_num,\n\t\tiEmail = email,\n\t\tiDob = dob,\n\t\tiAddress = address,\n\t\tiCity = city,\n\t\tiState = state,\n\t\tiPostCode = postCode,\n\t\tiMembersince = membersince,\n\t\tiSourceLineage = sourceLineage,\n\t\tiFirstName = FirstName,\n\t\tiLastName = LastName\n\t),\n\tskipDuplicateMapInputs: true,\n\tskipDuplicateMapOutputs: true) ~> FixColumnNamesRemoveName\nFixColumnNamesRemoveName derive(iRecMd5Hash = md5(iif(isNull(iEmail),'',toString(iEmail))+ \r\niif(isNull(iDob),'',toString(iDob))+ \r\niif(isNull(iAddress),'',toString(iAddress))+ \r\niif(isNull(iCity),'',toString(iCity))+ \r\niif(isNull(iState),'',toString(iState))+ \r\niif(isNull(iPostCode),'',toString(iPostCode))+ \r\niif(isNull(iMembersince),'',toString(iMembersince))+ \r\niif(isNull(iFirstName),'',toString(iFirstName))+ \r\niif(isNull(iLastName),'',toString(iLastName)))) ~> MD5Hash\nSmartFoodsCustomerSQLDW filter(isNull(RecEndDt)) ~> CurrentRecordsOnly\nMD5Hash, CurrentRecordsOnly join(iLoyaltyNum == LoyaltyNum,\n\tjoinType:'left',\n\tmatchType:'exact',\n\tignoreSpaces: false,\n\tbroadcast: 'auto')~> JoinStagingToDWDim\nJoinStagingToDWDim split(isNull(LoyaltyNum),\n\t!(isNull(LoyaltyNum)) && (iRecMd5Hash !=RecMd5Hash),\n\t!(isNull(LoyaltyNum)) && (iRecMd5Hash == RecMd5Hash),\n\tdisjoint: false) ~> SDC2Split@(New, Changed, Unchanged)\nSDC2Split@New select(mapColumn(\n\t\tLoyaltyNum = iLoyaltyNum,\n\t\tEmail = iEmail,\n\t\tDob = iDob,\n\t\tAddress = iAddress,\n\t\tCity = iCity,\n\t\tState = iState,\n\t\tPostCode = iPostCode,\n\t\tMemberSince = iMembersince,\n\t\tsourceLineage = iSourceLineage,\n\t\tFirstName = iFirstName,\n\t\tLastName = iLastName,\n\t\tRecMd5Hash = iRecMd5Hash\n\t),\n\tskipDuplicateMapInputs: true,\n\tskipDuplicateMapOutputs: true) ~> SelectNewInsert\nSDC2Split@Changed select(mapColumn(\n\t\tLoyaltyNum = iLoyaltyNum,\n\t\tEmail = iEmail,\n\t\tDob = iDob,\n\t\tAddress = iAddress,\n\t\tCity = iCity,\n\t\tState = iState,\n\t\tPostCode = iPostCode,\n\t\tMemberSince = iMembersince,\n\t\tFirstName = iFirstName,\n\t\tLastName = iLastName,\n\t\tRecMd5Hash = iRecMd5Hash,\n\t\tsourceLineage = iSourceLineage\n\t),\n\tskipDuplicateMapInputs: true,\n\tskipDuplicateMapOutputs: true) ~> SelectChangedInsert\nSDC2Split@Changed select(mapColumn(\n\t\tCustomerKey,\n\t\tLoyaltyNum,\n\t\tFirstName,\n\t\tLastName,\n\t\tCity,\n\t\tState,\n\t\tEmail,\n\t\tAddress,\n\t\tPostCode,\n\t\tMemberSince,\n\t\tDob,\n\t\tRecInsertDt,\n\t\tRecStartDt,\n\t\tRecCurrInd,\n\t\tsourceLineage\n\t),\n\tskipDuplicateMapInputs: true,\n\tskipDuplicateMapOutputs: true) ~> SelectChangedUpdate\nSelectNewInsert, SelectChangedInsert union(byName: true)~> ALLInserts\nALLInserts keyGenerate(output(CustomerKey as long),\n\tstartAt: 1L,\n\tstepValue: 1L) ~> SurrogateKey\nSurrogateKey derive(CustomerKey = CustomerKey+$MaxCustomerKey) ~> MaxCustomerKey\nMaxCustomerKey derive(RecInsertDt = currentDate(),\n\t\tRecCurrInd = true(),\n\t\tRecStartDt = toDate($BatchDt,'yyyy-MM-dd'),\n\t\tRecEnddt = toDate(toString(null()))) ~> InsertRecsBatchColumns\nInsertRecsBatchColumns, SelectChangedInsert union(byName: true)~> UnionInsertUpdates\nSelectChangedUpdate derive(RecEndDt = toDate($BatchDt, 'yyyy-MM-dd'),\n\t\tRecCurrInd = false()) ~> UpdateRecsBatchColumns\nUnionInsertUpdates sink(allowSchemaDrift: true,\n\tvalidateSchema: false,\n\tformat: 'delta',\n\tcontainer: 'wwistaging',\n\tmergeSchema: false,\n\tautoCompact: false,\n\toptimizedWrite: false,\n\tvacuum: 0,\n\tdeletable:false,\n\tinsertable:true,\n\tupdateable:false,\n\tupsertable:false,\n\tskipDuplicateMapInputs: true,\n\tskipDuplicateMapOutputs: true) ~> sink1"
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/SmartFoodsDelimitedTextBlob')]",
+				"[concat(variables('factoryId'), '/datasets/AzureSqlTable1')]",
+				"[concat(variables('factoryId'), '/linkedServices/adflndevstorage')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/lgnsql2017')]",
+			"type": "Microsoft.DataFactory/factories/linkedServices",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"annotations": [],
+				"type": "SqlServer",
+				"typeProperties": {
+					"connectionString": "[parameters('lgnsql2017_connectionString')]"
+				},
+				"connectVia": {
+					"referenceName": "lgnsql2017",
+					"type": "IntegrationRuntimeReference"
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/integrationRuntimes/lgnsql2017')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/adfcdc1')]",
+			"type": "Microsoft.DataFactory/factories/adfcdcs",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"SourceConnectionsInfo": [
+					{
+						"SourceEntities": [
+							{
+								"name": "Sales.SalesOrderDetail",
+								"properties": {
+									"schema": [],
+									"dslConnectorProperties": [
+										{
+											"name": "format",
+											"value": "table"
+										},
+										{
+											"name": "store",
+											"value": "sqlserver"
+										},
+										{
+											"name": "enableCdc",
+											"value": true
+										},
+										{
+											"name": "skipInitialLoad",
+											"value": false
+										},
+										{
+											"name": "schemaName",
+											"value": "Sales"
+										},
+										{
+											"name": "tableName",
+											"value": "SalesOrderDetail"
+										},
+										{
+											"name": "waterMarkColumn",
+											"value": "ModifiedDate"
+										},
+										{
+											"name": "databaseType",
+											"value": "databaseType"
+										},
+										{
+											"name": "database",
+											"value": "database"
+										}
+									]
+								}
+							}
+						],
+						"Connection": {
+							"linkedService": {
+								"referenceName": "lgnsql2017",
+								"type": "LinkedServiceReference"
+							},
+							"linkedServiceType": "SqlServer",
+							"type": "linkedservicetype",
+							"isInlineDataset": true
+						}
+					}
+				],
+				"TargetConnectionsInfo": [
+					{
+						"TargetEntities": [
+							{
+								"name": "lgnsynapsefs/delta",
+								"properties": {
+									"schema": [],
+									"dslConnectorProperties": [
+										{
+											"name": "format",
+											"value": "delta"
+										},
+										{
+											"name": "container",
+											"value": "lgnsynapsefs"
+										},
+										{
+											"name": "fileSystem",
+											"value": "lgnsynapsefs"
+										},
+										{
+											"name": "mergeSchema",
+											"value": true
+										},
+										{
+											"name": "autoCompact",
+											"value": true
+										},
+										{
+											"name": "optimizedWrite",
+											"value": true
+										},
+										{
+											"name": "deletable",
+											"value": false
+										},
+										{
+											"name": "insertable",
+											"value": true
+										},
+										{
+											"name": "updateable",
+											"value": false
+										},
+										{
+											"name": "upsertable",
+											"value": false
+										},
+										{
+											"name": "skipDuplicateMapInputs",
+											"value": true
+										},
+										{
+											"name": "skipDuplicateMapOutputs",
+											"value": true
+										},
+										{
+											"name": "folderPath",
+											"value": "delta"
+										}
+									]
+								}
+							}
+						],
+						"Connection": {
+							"linkedService": {
+								"referenceName": "AzureDataLakeStorage1",
+								"type": "LinkedServiceReference"
+							},
+							"linkedServiceType": "AzureBlobFS",
+							"type": "linkedservicetype",
+							"isInlineDataset": true
+						},
+						"DataMapperMappings": [],
+						"Relationships": []
+					}
+				],
+				"Policy": {
+					"recurrence": {
+						"frequency": "Minute",
+						"interval": 15
+					},
+					"mode": "Non-continuous"
+				}
+			},
+			"dependsOn": []
+		}
+	]
+}
