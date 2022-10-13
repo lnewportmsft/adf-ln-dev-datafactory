@@ -54,6 +54,7 @@
 				"flatten1 sink(allowSchemaDrift: true,",
 				"     validateSchema: false,",
 				"     format: 'delta',",
+				"     fileSystem: 'lgnsynapsefs',",
 				"     mergeSchema: false,",
 				"     autoCompact: false,",
 				"     optimizedWrite: false,",
